@@ -3,11 +3,11 @@ name: Lint
 on:
   push:
     branches:
-      - main
+      - master
 
   pull_request:
     branches:
-      - main
+      - master
 
 run-name: "Lint (${{ github.head_ref || github.ref_name }})"
 
