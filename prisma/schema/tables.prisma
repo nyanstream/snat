@@ -1,0 +1,64 @@
+model ChatMessage {
+  id        String          @id @default(uuid()) @db.Char(36)
+  createdAt DateTime        @default(now()) @db.Timestamp(6)
+  nickname  String?
+  text      String
+  userId    String?         @db.Char(36)
+  type      ChatMessageType @default(User)
+  updatedAt DateTime        @default(now()) @updatedAt @db.Timestamp(6)
+  ipV4      String?         @db.VarChar(15)
+  user      User?           @relation(fields: [userId], references: [id])
+
+  @@index([createdAt], map: "ChatMessage_createdAt_index")
+  @@index([userId], map: "ChatMessage_userId_FK")
+}
+
+model User {
+  id             String        @id @default(uuid()) @db.Char(36)
+  createdAt      DateTime      @default(now()) @db.Timestamp(6)
+  role           UserRole      @default(User)
+  status         UserStatus    @default(Pending)
+  nickname       String        @unique(map: "User_nickname_unique") @db.VarChar(20)
+  chatovodUserId String?       @unique(map: "User_chatovodUserId_unique") @db.VarChar(20)
+  discordUserId  String?       @unique(map: "User_discordUserId_unique") @db.VarChar(20)
+  lastOnlineAt   DateTime      @default(now()) @db.Timestamp(6)
+  registeredAt   DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  chatMessages   ChatMessage[]
+
+  @@index([createdAt], map: "User_createdAt_index")
+}
+
+model Emoji {
+  id              String   @id @default(uuid()) @db.Char(36)
+  createdAt       DateTime @default(now()) @db.Timestamp(6)
+  code            String   @unique(map: "Emoji_code_unique") @db.VarChar(25)
+  imageUrl        String   @db.VarChar(100)
+  imageWidth      Int
+  imageHeight     Int
+  uiHidden        Boolean  @default(false)
+  uiColorInverted Boolean  @default(false)
+  priorityOrder   Int      @default(0)
+  uiReversedX     Boolean  @default(false)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@index([createdAt], map: "Emoji_createdAt_index")
+}
+
+enum UserRole {
+  Administrator
+  Moderator
+  User
+  Guest
+}
+
+enum UserStatus {
+  Active
+  Inactive
+  Pending
+}
+
+enum ChatMessageType {
+  User
+  System
+}

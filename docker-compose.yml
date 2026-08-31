@@ -1,0 +1,23 @@
+services:
+  # web:
+  #   container_name: snat_web
+  #   build: .
+  #   ports:
+  #     - 8000:8000
+  #   environment:
+  #     - LOG_LEVEL=info
+  #     - INTERNAL_SERVER_URL=http://0.0.0.0:8000
+  #     - DATABASE_URL=postgresql://postgres:changeme@host.docker.internal:5432/snat
+  #     - JWT_SECRET=this_is_so_secret
+  #   volumes:
+  #     - ./.tls:/tls
+
+  postgres:
+    container_name: snat_postgres
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: snat
+    ports:
+      - 5432:5432

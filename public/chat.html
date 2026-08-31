@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Chat</title>
+
+		<style>
+			body {
+				font-size: 16px;
+			}
+
+			input,
+			textarea,
+			button {
+				font-size: inherit;
+			}
+
+			.users {
+				p,
+				ul {
+					display: inline;
+					margin: 0;
+					padding: 0;
+				}
+
+				.users__list {
+					li {
+						display: inline-block;
+
+						&:not(&:first-of-type) {
+							&::before {
+								content: ", ";
+							}
+						}
+
+						&.inactive {
+							opacity: 0.5;
+						}
+					}
+
+					&:empty {
+						&::before {
+							content: "No one";
+						}
+					}
+				}
+			}
+
+			.form {
+				display: flex;
+				flex-direction: column;
+				gap: 7.5px;
+				margin-top: 10px;
+
+				&[hidden] {
+					display: none;
+				}
+			}
+
+			.messages {
+				max-height: 500px;
+				overflow: hidden;
+				overflow-y: scroll;
+				border: 1px solid #ccc;
+				padding: 10px;
+				margin-top: 10px;
+
+				&:empty {
+					&::before {
+						content: "Empty here...";
+					}
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="users">
+			<p>users:</p>
+			<ul class="users__list"></ul>
+		</div>
+
+		<div class="messages"></div>
+
+		<form class="form form--login">
+			<div>
+				<input id="nickname" name="nickname" placeholder="Nickname" required />
+			</div>
+			<div>
+				<button type="submit" disabled>Guest Login</button> or
+				<button type="button" class="discord-auth-btn">Discord Login</button>
+			</div>
+		</form>
+
+		<form class="form form--send" hidden>
+			<div>
+				<textarea
+					id="text"
+					name="text"
+					placeholder="Sample text"
+					required
+				></textarea>
+			</div>
+			<div><button type="submit">Send message</button></div>
+		</form>
+
+		<dialog class="discord-signup-dialog">
+			<form class="form">
+				<div>
+					<input
+						id="nickname"
+						name="nickname"
+						placeholder="Nickname"
+						required
+					/>
+				</div>
+				<div><button type="submit">Register</button></div>
+			</form>
+		</dialog>
+
+		<script>
+			const locationHash = new URLSearchParams(
+				window.location.hash.replace("#", ""),
+			);
+			const oauthSessionId = locationHash.get("oauthSessionId");
+			const bearerTokenFromUrl = locationHash.get("bearerToken");
+
+			const loginForm = document.querySelector(".form--login");
+			const sendForm = document.querySelector(".form--send");
+
+			const discordAuthButton = loginForm.querySelector(".discord-auth-btn");
+			const discordAuthDialog = document.querySelector(".discord-auth-dialog");
+
+			const usersList = document.querySelector(".users__list");
+			const messages = document.querySelector(".messages");
+
+			const server = new EventSource(new URL("/sse", location.origin).href);
+
+			let connectionId;
+			let token;
+
+			const insertUsers = (userData) => {
+				const newUser = document.createElement("li");
+				newUser.dataset.userId = userData.id;
+				newUser.textContent = userData.nickname;
+				if (userData.status === "inactive") {
+					newUser.classList.add("inactive");
+				}
+				usersList.appendChild(newUser);
+			};
+
+			const removeUser = (userId) => {
+				const userItem = usersList.querySelector(
+					`li[data-user-id="${userId}"]`,
+				);
+				if (userItem) {
+					userItem.remove();
+				}
+			};
+
+			const insertMessage = (messageData) => {
+				const newMessage = document.createElement("div");
+				newMessage.dataset.id = messageData.id;
+				if (messageData.userId) newMessage.dataset.userId = messageData.userId;
+				newMessage.textContent = `${messageData.nickname}: ${messageData.text}`;
+				messages.appendChild(newMessage);
+				messages.scroll({ top: messages.scrollHeight, behavior: "smooth" });
+			};
+
+			server.addEventListener("message", (event) => {
+				const messageData = JSON.parse(event.data);
+				if (messageData.type === "UserConnected" && !connectionId) {
+					connectionId = messageData.data.connectionId;
+
+					if (bearerTokenFromUrl) {
+						fetch(new URL("/api/post-login-with-token", location.origin).href, {
+							method: "POST",
+							headers: {
+								"Content-type": "application/json",
+								Authorization: bearerTokenFromUrl,
+							},
+							body: JSON.stringify({ connectionId }),
+						})
+							.then((response) => response.json())
+							.then((data) => {
+								if (data.success) {
+									token = bearerTokenFromUrl;
+									loginForm.setAttribute("hidden", "");
+									sendForm.removeAttribute("hidden");
+									history.pushState(
+										"",
+										document.title,
+										window.location.pathname + window.location.search,
+									);
+								}
+							});
+					} else {
+						loginForm.querySelector("button").removeAttribute("disabled");
+					}
+				}
+				if (messageData.type === "UserLogin") {
+					insertUsers({
+						id: messageData.data.id,
+						nickname: messageData.data.nickname,
+						status: messageData.data.status,
+					});
+				}
+				if (messageData.type === "UserLogout") {
+					removeUser(messageData.data.userId);
+				}
+				if (messageData.type === "NewChatMessage") {
+					insertMessage(messageData.data);
+				}
+				if (messageData.type === "UserInactiveStatus") {
+					const userId = messageData.data.userId;
+					const userItem = usersList.querySelector(
+						`li[data-user-id="${userId}"]`,
+					);
+					if (userItem) {
+						userItem.classList.add("inactive");
+					}
+				}
+			});
+
+			server.addEventListener("error", (event) => {
+				connectionId = null;
+			});
+
+			loginForm.addEventListener("submit", (event) => {
+				event.preventDefault();
+
+				const formData = new FormData(event.target);
+
+				fetch(new URL("/api/post-guest-login", location.origin).href, {
+					method: "POST",
+					headers: {
+						"Content-type": "application/json",
+					},
+					body: JSON.stringify({
+						connectionId,
+						...Object.fromEntries(formData.entries()),
+					}),
+				})
+					.then((response) => response.json())
+					.then((data) => {
+						token = data.bearer;
+						if (token) {
+							loginForm.setAttribute("hidden", "");
+							sendForm.removeAttribute("hidden");
+						}
+					});
+			});
+
+			sendForm.addEventListener("submit", (event) => {
+				event.preventDefault();
+
+				const formData = new FormData(event.target);
+
+				fetch(new URL("/api/post-send-chat-message", location.origin).href, {
+					method: "POST",
+					headers: {
+						"Content-type": "application/json",
+						Authorization: token,
+					},
+					body: JSON.stringify(Object.fromEntries(formData.entries())),
+				}).then(() => {
+					sendForm.reset();
+				});
+			});
+
+			discordAuthButton.addEventListener("click", (event) => {
+				event.preventDefault();
+
+				fetch(new URL("/api/get-discord-oauth-url", location.origin).href)
+					.then((response) => response.json())
+					.then((data) => {
+						if (data.url) {
+							const redirectUrl = data.url;
+							window.location.replace(redirectUrl);
+						}
+					});
+			});
+
+			(() => {
+				if (oauthSessionId) {
+					const discordAuthDialog = document.querySelector(
+						".discord-signup-dialog",
+					);
+					const discordAuthForm = discordAuthDialog.querySelector("form");
+
+					discordAuthDialog.showModal();
+
+					discordAuthForm.addEventListener("submit", (event) => {
+						event.preventDefault();
+
+						const formData = new FormData(event.target);
+
+						fetch(new URL("/api/post-discord-signup", location.origin).href, {
+							method: "POST",
+							headers: {
+								"Content-type": "application/json",
+							},
+							body: JSON.stringify({
+								oauthSessionId,
+								connectionId,
+								...Object.fromEntries(formData.entries()),
+							}),
+						})
+							.then((response) => response.json())
+							.then((data) => {
+								token = data.bearer;
+								if (token) {
+									loginForm.setAttribute("hidden", "");
+									sendForm.removeAttribute("hidden");
+									discordAuthDialog.close();
+									history.pushState(
+										"",
+										document.title,
+										window.location.pathname + window.location.search,
+									);
+								}
+							});
+					});
+				}
+
+				fetch(new URL("/api/get-chat-users", location.origin).href)
+					.then((data) => data.json())
+					.then((data) => {
+						for (let userData of data.users) {
+							insertUsers(userData);
+						}
+					});
+
+				fetch(new URL("/api/get-latest-messages", location.origin).href)
+					.then((data) => data.json())
+					.then((messages) => {
+						for (let messageData of messages) {
+							insertMessage(messageData);
+						}
+					});
+			})();
+
+			window.addEventListener("beforeunload", () => {
+				if (server) server.close();
+			});
+		</script>
+	</body>
+</html>
